@@ -529,13 +529,20 @@ void CCodeGen_Wasm::PrepareSignatures(CWasmModuleBuilder& moduleBuilder, const S
 
 	for(const auto& statement : statements)
 	{
-		if(statement.op != OP_CALL) continue;
+		if((statement.op != OP_CALL) && (statement.op != OP_EXTERNJMP)) continue;
 
 		auto src1 = statement.src1->GetSymbol().get();
 		assert(src1->m_type == SYM_CONSTANTPTR);
 
 		auto fctInfo = CWasmFunctionRegistry::FindFunction(src1->m_valueLow);
 		assert(fctInfo);
+		if(!fctInfo)
+		{
+			//Without a registered signature the call would leave the stack unbalanced and the module invalid.
+			auto message = "Unregistered native function called from JIT code: 0x" + std::to_string(src1->m_valueLow);
+			printf("%s\r\n", message.c_str());
+			throw std::runtime_error(message);
+		}
 
 		assert(!fctInfo->signature.empty());
 
@@ -1144,6 +1151,12 @@ void CCodeGen_Wasm::Emit_ExternJmp(const STATEMENT& statement)
 	PushContext();
 
 	auto fctInfo = CWasmFunctionRegistry::FindFunction(src1->m_valueLow);
+	if(!fctInfo)
+	{
+		auto message = "Unregistered native function jumped to from JIT code: 0x" + std::to_string(src1->m_valueLow);
+		printf("%s\r\n", message.c_str());
+		throw std::runtime_error(message);
+	}
 	auto sigIdxIterator = m_signatures.find(fctInfo->signature);
 	assert(sigIdxIterator != std::end(m_signatures));
 	auto sigIdx = sigIdxIterator->second;
